@@ -1,0 +1,101 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
+
+def analyze_density():
+    """
+    Analyzes raw mass-volume data to calculate liquid density.
+    - Calculates mean mass and standard error.
+    - Performs linear regression of Mass vs. Volume to find density.
+    - Prints the final results and generates a professional plot.
+    """
+    # 1. Define the raw experimental data
+    volumes_ml = np.array([4, 10, 20])
+    mass_trials_g = np.array([
+        [2.379, 3.819, 5.160],   # Masses for 4 mL
+        [8.764, 9.659, 6.277],   # Masses for 10 mL
+        [18.725, 19.878, 15.160]  # Masses for 20 mL
+    ])
+
+    # Define the instrumental uncertainties
+    volume_uncertainty_ml = 0.25
+
+    # 2. Calculate Mean Mass and Standard Error for each volume
+    mean_masses_g = mass_trials_g.mean(axis=1)
+    std_dev_masses_g = mass_trials_g.std(axis=1, ddof=1)
+    sem_masses_g = std_dev_masses_g / np.sqrt(mass_trials_g.shape[1])
+
+    # 3. Perform Linear Regression (Mass vs. Volume)
+    # The slope of the line is the density (m/V)
+    slope, intercept, r_value, p_value, std_err = linregress(volumes_ml, mean_masses_g)
+    
+    density_g_ml = slope
+    density_uncertainty_g_ml = std_err
+
+    # 4. Print the final results to the console
+    print("--- Density Analysis Results ---")
+    
+    # Format results for printing
+    unc_str = f"{density_uncertainty_g_ml:.2g}"
+    if '.' in unc_str:
+        dec_places = len(unc_str.split('.')[1])
+    else:
+        dec_places = 0
+    density_str = f"{density_g_ml:.{dec_places}f}"
+
+    print(f"Calculated Density (ρ): {density_str} ± {unc_str} g/mL")
+    print(f"Y-Intercept: {intercept:.3f} g")
+    print(f"R-squared: {r_value**2:.4f}")
+
+    # 5. Generate the Plot
+    plt.style.use('seaborn-v0_8-whitegrid')
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    # Plot data points with error bars on both axes
+    ax.errorbar(
+        volumes_ml,
+        mean_masses_g,
+        xerr=volume_uncertainty_ml,
+        yerr=sem_masses_g,
+        fmt='D',  # Diamond markers
+        color='green',
+        ecolor='gray',
+        capsize=4,
+        label='Experimental Data'
+    )
+
+    # Plot the best-fit line
+    x_fit = np.array([0, max(volumes_ml) * 1.1])
+    y_fit = density_g_ml * x_fit + intercept
+    ax.plot(x_fit, y_fit, color='darkgreen', linestyle='-', label='Linear Fit')
+
+    # Format the plot professionally
+    ax.set_xlabel('Volume $V$ / mL', fontsize=14)
+    ax.set_ylabel('Mass $m$ / g', fontsize=14)
+    ax.set_title('Mass vs. Volume for Liquid Detergent', fontsize=16)
+    ax.legend(fontsize=12, loc='upper left')
+    ax.set_xlim(left=0)
+    ax.set_ylim(bottom=0)
+
+    # Create a text box with the formatted results
+    fit_text = (
+        f"Linear Fit: $m = \\rho \\cdot V + c$\n\n"
+        f"Density ($\\rho$):\n"
+        f"  ${density_str} \\pm {unc_str}$ g/mL\n\n"
+        f"R-squared: ${r_value**2:.4f}$"
+    )
+    props = dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray')
+    ax.text(0.95, 0.05, fit_text, transform=ax.transAxes, fontsize=11,
+            verticalalignment='bottom', horizontalalignment='right', bbox=props)
+
+    plt.tight_layout()
+    
+    # Save the figure to the 'output' folder and display it
+    # Make sure you have a folder named 'output' in the same directory as the script
+    # or change the path.
+    # plt.savefig('../output/density_fit.png', dpi=300) 
+    plt.show()
+
+if __name__ == '__main__':
+    analyze_density()
