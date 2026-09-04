@@ -1,0 +1,82 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
+
+# 1. Create the DataFrame with your data
+data = {
+    'displacement_cm': [1, 2, 3, 4, 5, 6, 7, 8],
+    'time1_s': [9.79, 22.73, 37.32, 48.5, 61.74, 75.11, 88.52, 100.22],
+    'time2_s': [8.6, 18.14, 27.4, 36.0, 44.95, 54.52, 63.63, 83.31],
+    'time3_s': [8.48, 19.82, 25.19, 34.13, 42.83, 51.44, 59.4, 68.44],
+    'time4_s': [9.76, 18.71, 35.72, 44.75, 53.36, 61.78, 79.21, 87.54],
+    'time5_s': [10.14, 17.63, 26.15, 35.38, 44.05, 52.6, 60.93, 69.39],
+    'time6_s': [8.34, 17.95, 25.86, 34.55, 43.15, 51.08, 60.09, 68.19]
+}
+df = pd.DataFrame(data)
+
+# 2. Calculate the mean and standard error of the mean for the time trials
+time_cols = [col for col in df.columns if 'time' in col]
+df['mean_time_s'] = df[time_cols].mean(axis=1)
+# Use ddof=1 for sample standard deviation
+df['sem_time_s'] = df[time_cols].std(axis=1, ddof=1) / np.sqrt(len(time_cols))
+
+# 3. Perform linear regression to find terminal velocity
+# The slope of the displacement vs. time graph is the velocity
+slope, intercept, r_value, p_value, std_err = linregress(df['mean_time_s'], df['displacement_cm'])
+
+# 4. Print the final results for your report
+print("--- Data Table with Calculations ---")
+print(df[['displacement_cm', 'mean_time_s', 'sem_time_s']].round(3).to_string())
+print("\n--- Final Results for Your Discussion ---")
+
+# Rule: Round uncertainty to 2 significant figures first
+uncertainty_str = f"{std_err:.2g}"
+# Then, match the main value's decimal places to the uncertainty's
+if '.' in uncertainty_str:
+    decimal_places = len(uncertainty_str.split('.')[1])
+else:
+    decimal_places = 0
+velocity_str = f"{slope:.{decimal_places}f}"
+
+print(f"Terminal Velocity: {velocity_str} ± {uncertainty_str} cm/s")
+print(f"R-squared: {r_value**2:.4f}")
+
+# 5. Generate the graph
+plt.figure(figsize=(10, 7))
+# Plot data points with error bars
+plt.errorbar(
+    df['mean_time_s'],
+    df['displacement_cm'],
+    xerr=df['sem_time_s'],
+    yerr=0.1,  # Constant error for ruler measurement
+    fmt='s',
+    color='black',
+    ecolor='gray',
+    capsize=4,
+    label='Experimental Data'
+)
+# Plot the best-fit line
+x_fit = np.linspace(df['mean_time_s'].min() * 0.9, df['mean_time_s'].max() * 1.1, 100)
+y_fit = slope * x_fit + intercept
+plt.plot(x_fit, y_fit, color='red', label='Linear Fit')
+
+# 6. Add professional labels and a results box
+plt.xlabel('Time $t$ / s', fontsize=14)
+plt.ylabel('Displacement $y$ / cm', fontsize=14)
+plt.title('Displacement vs. Time for the smallest ball', fontsize=16)
+plt.legend(loc='lower right', fontsize=12)
+plt.grid(True)
+
+results_text = (
+    f"Linear Fit: $y = v_T \\cdot t + y_0$\n\n"
+    f"Terminal Velocity ($v_T$):\n"
+    f"  ${velocity_str} \\pm {uncertainty_str}$ cm/s\n\n"
+    f"R-squared: ${r_value**2:.4f}$"
+)
+props = dict(boxstyle='round', facecolor='white', alpha=0.8)
+plt.text(0.05, 0.95, results_text, transform=plt.gca().transAxes, fontsize=11,
+         verticalalignment='top', bbox=props)
+
+plt.tight_layout()
+plt.show()
