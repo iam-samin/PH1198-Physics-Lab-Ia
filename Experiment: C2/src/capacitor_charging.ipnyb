@@ -1,0 +1,149 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
+from io import StringIO
+
+# ==========================================
+# 1. RAW DATA
+# ==========================================
+data = """
+0.0 0.029 0.029 0.030 0.042 0.030
+5.0 0.636 0.788 0.738 0.743 0.770
+10.0 1.329 1.424 1.372 1.316 1.229
+15.0 1.758 1.858 1.942 1.842 1.830
+20.0 2.306 2.224 2.271 2.304 2.320
+25.0 2.648 2.678 2.671 2.698 2.605
+30.0 3.026 2.967 2.935 2.993 2.984
+35.0 3.278 3.273 3.225 3.278 3.231
+40.0 3.481 3.473 3.488 3.515 3.508
+45.0 3.705 3.712 3.708 3.681 3.679
+50.0 3.863 3.874 3.865 3.895 3.858
+55.0 4.006 4.025 4.031 4.022 4.026
+60.0 4.162 4.151 4.141 4.147 4.159
+65.0 4.252 4.245 4.266 4.261 4.271
+70.0 4.361 4.373 4.361 4.352 4.353
+75.0 4.439 4.447 4.440 4.443 4.446
+80.0 4.516 4.519 4.509 4.514 4.517
+85.0 4.577 4.584 4.573 4.576 4.575
+90.0 4.634 4.633 4.630 4.624 4.634
+95.0 4.675 4.685 4.670 4.694 4.666
+100.0 4.728 4.719 4.715 4.711 4.717
+105.0 4.757 4.756 4.755 4.747 4.755
+110.0 4.786 4.780 4.780 4.783 4.791
+115.0 4.808 4.810 4.817 4.810 4.810
+120.0 4.835 4.831 4.836 4.831 4.837
+125.0 4.853 4.857 4.854 4.856 4.850
+130.0 4.871 4.872 4.875 4.869 4.873
+135.0 4.887 4.889 4.888 4.886 4.885
+140.0 4.900 4.901 4.901 4.903 4.900
+145.0 4.914 4.906 4.911 4.913 4.916
+150.0 4.929 4.922 4.916 4.924 4.923
+"""
+
+# Load into pandas DataFrame
+df = pd.read_csv(StringIO(data), sep=' ', header=None,
+                 names=['time', 'v1', 'v2', 'v3', 'v4', 'v5'])
+
+# ==========================================
+# 2. STATISTICAL & ERROR ANALYSIS
+# ==========================================
+v_cols = ['v1', 'v2', 'v3', 'v4', 'v5']
+# Calculate Average Voltage (V_avg) across 5 trials
+df['v_avg'] = df[v_cols].mean(axis=1)
+# Calculate Standard Error of the Mean (SEM) for V_avg
+df['sem_v'] = df[v_cols].std(axis=1, ddof=1) / np.sqrt(len(v_cols))
+
+# ==========================================
+# 3. LINEARIZATION & ERROR PROPAGATION
+# ==========================================
+Vs = 5.03 
+
+# Filter out values >= Vs and t=0 point to avoid log(0) and fitting skew
+df_fit = df[(df['v_avg'] < Vs) & (df['time'] > 0)].copy()
+
+# Linear transform: y = ln(1 - V_c(t) / V_s)
+df_fit['y_linear'] = np.log(1 - df_fit['v_avg'] / Vs)
+
+# Propagate voltage standard error (SEM) to vertical y-axis error:
+# dy/dV = -1 / (Vs - V_avg) -> absolute uncertainty dy = sem_v / (Vs - V_avg)
+df_fit['y_err'] = df_fit['sem_v'] / (Vs - df_fit['v_avg'])
+
+# ==========================================
+# 4. LINEAR REGRESSION (FITTING)
+# ==========================================
+t = df_fit['time']
+y = df_fit['y_linear']
+slope, intercept, r_value, p_value, std_err_slope = linregress(t, y)
+
+# Calculate Time Constant (RC) and its uncertainty:
+# RC = -1 / slope
+# Uncertainty: d_RC = RC^2 * std_err_slope
+RC = -1 / slope
+RC_uncertainty = (RC**2) * std_err_slope
+
+# ==========================================
+# 5. SCIENTIFIC ROUNDING FORMAT
+# ==========================================
+# Rule: Round uncertainty to 2 significant figures first
+rc_uncertainty_str = f"{RC_uncertainty:.2g}"
+
+# Match decimal places of the main value to the uncertainty's decimal depth
+if '.' in rc_uncertainty_str:
+    decimal_places = len(rc_uncertainty_str.split('.')[1])
+else:
+    decimal_places = 0
+rc_value_str = f"{RC:.{decimal_places}f}"
+
+# Print results to console
+print("--- ANALYSIS RESULTS ---")
+print(f"Calculated Slope (m): {slope:.6f} ± {std_err_slope:.6f}")
+print(f"y-intercept (c): {intercept:.4f}")
+print(f"R-squared Value: {r_value**2:.5f}")
+print(f"Experimental Time Constant (RC): {rc_value_str} ± {rc_uncertainty_str} s")
+
+# ==========================================
+# 6. PLOT GENERATION WITH ERROR BARS
+# ==========================================
+plt.figure(figsize=(11, 7))
+
+# Plot experimental points with propagated vertical error bars
+plt.errorbar(
+    df_fit['time'],
+    df_fit['y_linear'],
+    yerr=df_fit['y_err'], # Vertical error bars
+    fmt='o',
+    color='black',
+    ecolor='gray',
+    capsize=4,
+    markersize=5,
+    label='Linearized Experimental Data'
+)
+
+# Plot best-fit line
+t_fit = np.linspace(df_fit['time'].min(), df_fit['time'].max(), 100)
+y_fit = slope * t_fit + intercept
+plt.plot(t_fit, y_fit, color='red', linestyle='-', linewidth=2, label='Linear Fit')
+
+# Formatting and labeling
+plt.xlabel('Time $t$ / s', fontsize=12)
+plt.ylabel('$ln(1 - V_C/V_s)$', fontsize=12)
+plt.title('Linearized RC Charging Circuit', fontsize=14)
+plt.legend(loc='lower left', fontsize=11)
+plt.grid(True, which='both', linestyle=':', alpha=0.7)
+
+# Create summary box on the plot
+results_text = (
+    f"Linear Fit: $y = m \\cdot t + c$\n"
+    f"Slope ($m$): ${slope:.5f} \\pm {std_err_slope:.5f}$ s$^{{-1}}$\n"
+    f"Intercept ($c$): ${intercept:.4f}$\n\n"
+    f"Time Constant ($RC = -1/m$):\n"
+    f"  $\\tau = {rc_value_str} \\pm {rc_uncertainty_str}$ s\n\n"
+    f"R-squared: ${r_value**2:.5f}$"
+)
+props = dict(boxstyle='round,pad=0.6', facecolor='white', edgecolor='lightgray', alpha=0.9)
+plt.text(0.65, 0.95, results_text, transform=plt.gca().transAxes, fontsize=11,
+         verticalalignment='top', bbox=props)
+
+plt.tight_layout()
+plt.show()
