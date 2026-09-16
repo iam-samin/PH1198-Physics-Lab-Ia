@@ -1,0 +1,131 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
+from io import StringIO
+
+# ==========================================
+# 1. RAW DATA INPUT
+# ==========================================
+data = """
+0.0 4.97 4.97 4.97 4.97 4.982
+5.0 4.218 4.238 4.097 4.07 4.382
+10.0 3.682 3.698 3.799 3.823 3.629
+15.0 3.189 3.198 3.292 3.313 3.139
+20.0 2.789 2.778 2.838 2.85 2.753
+25.0 2.408 2.416 2.464 2.476 2.383
+30.0 2.088 2.103 2.144 2.156 2.067
+35.0 1.824 1.83 1.866 1.875 1.805
+40.0 1.612 1.594 1.625 1.634 1.587
+45.0 1.412 1.399 1.432 1.439 1.39
+50.0 1.215 1.229 1.224 1.247 1.209
+55.0 1.06 1.067 1.076 1.08 1.055
+60.0 0.926 0.926 0.938 0.941 0.919
+65.0 0.809 0.808 0.819 0.821 0.803
+70.0 0.707 0.713 0.722 0.726 0.702
+75.0 0.638 0.639 0.633 0.642 0.632
+80.0 0.548 0.543 0.549 0.552 0.542
+85.0 0.483 0.476 0.482 0.486 0.475
+90.0 0.422 0.423 0.419 0.426 0.418
+95.0 0.369 0.368 0.388 0.392 0.358
+100.0 0.329 0.317 0.323 0.332 0.314
+105.0 0.285 0.278 0.283 0.288 0.276
+110.0 0.249 0.244 0.253 0.256 0.242
+115.0 0.222 0.214 0.219 0.224 0.214
+120.0 0.196 0.191 0.194 0.198 0.19
+125.0 0.173 0.168 0.171 0.175 0.167
+130.0 0.153 0.148 0.151 0.155 0.146
+135.0 0.133 0.129 0.132 0.135 0.127
+140.0 0.12 0.119 0.118 0.121 0.117
+145.0 0.108 0.102 0.109 0.112 0.101
+150.0 0.099 0.091 0.092 0.101 0.087
+"""
+df = pd.read_csv(StringIO(data), sep='\\s+', header=None, names=['time', 'v1', 'v2', 'v3', 'v4', 'v5'])
+
+# ==========================================
+# 2. STATISTICAL & ERROR ANALYSIS
+# ==========================================
+v_cols = ['v1', 'v2', 'v3', 'v4', 'v5']
+df['v_avg'] = df[v_cols].mean(axis=1)
+df['sem_v'] = df[v_cols].std(axis=1, ddof=1) / np.sqrt(len(v_cols))
+
+# ==========================================
+# 3. LINEARIZATION & ERROR PROPAGATION
+# ==========================================
+Vs = 5.030 
+
+# Filter for positive average voltage to avoid log(0)
+df_fit = df[df['v_avg'] > 0].copy()
+
+# Linear transform: y = ln(V_c / V_s)
+df_fit['y_linear'] = np.log(df_fit['v_avg'] / Vs)
+# Propagate error: dy = sem_v / V_avg
+df_fit['y_err'] = df_fit['sem_v'] / df_fit['v_avg']
+
+# ==========================================
+# 4. LINEAR REGRESSION (FITTING)
+# ==========================================
+t = df_fit['time']
+y = df_fit['y_linear']
+slope, intercept, r_value, p_value, std_err_slope = linregress(t, y)
+
+# Calculate Time Constant (RC) and its uncertainty
+RC = -1 / slope
+RC_uncertainty = (RC**2) * std_err_slope
+
+# ==========================================
+# 5. SCIENTIFIC ROUNDING FORMAT
+# ==========================================
+rc_uncertainty_str = f"{RC_uncertainty:.2g}"
+if '.' in rc_uncertainty_str:
+    decimal_places = len(rc_uncertainty_str.split('.')[1])
+else:
+    decimal_places = 0
+rc_value_str = f"{RC:.{decimal_places}f}"
+
+# ==========================================
+# 6. CONSOLE OUTPUT
+# ==========================================
+print("--- ANALYSIS RESULTS (DISCHARGING, NORMALIZED) ---")
+print(f"Calculated Slope (m): {slope:.6f} ± {std_err_slope:.6f}")
+print(f"y-intercept (c): {intercept:.4f}")
+print(f"R-squared Value: {r_value**2:.5f}")
+print(f"Experimental Time Constant (RC): {rc_value_str} ± {rc_uncertainty_str} s")
+
+# ==========================================
+# 7. PLOT GENERATION WITH VERTICAL ERROR BARS
+# ==========================================
+plt.figure(figsize=(12, 8))
+
+plt.errorbar(
+    df_fit['time'],
+    df_fit['y_linear'],
+    yerr=df_fit['y_err'],
+    fmt='o', color='black', ecolor='lightgray', capsize=4, markersize=5,
+    label='Linearized Experimental Data'
+)
+
+t_fit = np.linspace(df_fit['time'].min(), df_fit['time'].max(), 100)
+y_fit = slope * t_fit + intercept
+plt.plot(t_fit, y_fit, color='blue', linestyle='-', linewidth=2.5, label='Linear Fit')
+
+plt.xlabel('Time $t$ /s', fontsize=14)
+plt.ylabel('$\\ln(V_C/V_s)$', fontsize=14)
+plt.title('Linearized RC Discharging Circuit', fontsize=16)
+plt.legend(loc='lower left', fontsize=12)
+plt.grid(True, which='both', linestyle=':')
+
+results_text = (
+    f"Linear Fit: $y = m \\cdot t + c$\n"
+    f"$y = ({slope:.4f} \\pm {std_err_slope:.4f}) \\cdot t + ({intercept:.3f})$\n\n"
+    f"Time Constant (RC):\n"
+    f"$\\tau = -1/\\text{{slope}} = ({rc_value_str} \\pm {rc_uncertainty_str})$ s\n\n"
+    f"R-squared: ${r_value**2:.5f}$"
+)
+props = dict(boxstyle='round,pad=0.5', facecolor='aliceblue', alpha=0.8)
+plt.text(0.65, 0.95, results_text, transform=plt.gca().transAxes, fontsize=12,
+         verticalalignment='top', bbox=props)
+
+plt.tight_layout()
+plt.show()
+
