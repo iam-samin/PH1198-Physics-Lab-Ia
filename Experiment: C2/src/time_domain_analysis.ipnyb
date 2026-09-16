@@ -1,0 +1,112 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
+from io import StringIO
+
+# ==========================================
+# 1. RAW DATA INPUT
+# ==========================================
+data_string = """
+Time_us,Vc_V
+0,0
+20,0.396
+40,1.500
+60,2.120
+80,2.680
+100,3.040
+120,3.360
+140,3.640
+160,3.880
+180,4.080
+200,4.200
+"""
+
+df = pd.read_csv(StringIO(data_string))
+
+# Convert time from microseconds to seconds
+df['Time_s'] = df['Time_us'] / 1e6
+
+# ==========================================
+# 2. LINEARIZATION
+# ==========================================
+Vs = 5.2  # Source Voltage
+
+# Filter out the t=0 point and any points where Vc might be >= Vs
+# to avoid errors with the natural logarithm (ln(0) is undefined).
+df_fit = df[(df['Vc_V'] < Vs) & (df['Time_s'] > 0)].copy()
+
+# Linear transform: y = ln(1 - Vc(t) / Vs)
+df_fit['y_linear'] = np.log(1 - df_fit['Vc_V'] / Vs)
+
+# ==========================================
+# 3. LINEAR REGRESSION
+# ==========================================
+t = df_fit['Time_s']
+y = df_fit['y_linear']
+slope, intercept, r_value, p_value, std_err_slope = linregress(t, y)
+
+# ==========================================
+# 4. CALCULATE TIME CONSTANT
+# ==========================================
+# Time constant RC = -1 / slope
+RC_s = -1 / slope
+RC_us = RC_s * 1e6  # Convert back to microseconds for the report
+
+# Propagate the error of the slope to the time constant
+RC_uncertainty_s = (RC_s**2) * std_err_slope
+RC_uncertainty_us = RC_uncertainty_s * 1e6
+
+# ==========================================
+# 5. SCIENTIFIC ROUNDING
+# ==========================================
+rc_uncertainty_str = f"{RC_uncertainty_us:.2g}"
+if '.' in rc_uncertainty_str:
+    decimal_places = len(rc_uncertainty_str.split('.')[1])
+else:
+    decimal_places = 0
+rc_value_str = f"{RC_us:.{decimal_places}f}"
+
+# ==========================================
+# 6. PLOT GENERATION
+# ==========================================
+plt.figure(figsize=(12, 8))
+
+# Plot the linearized data points
+plt.scatter(df_fit['Time_us'], df_fit['y_linear'], color='blue', zorder=5, label='Linearized Data Points')
+
+# Plot the best-fit line
+t_fit_us = np.linspace(df_fit['Time_us'].min(), df_fit['Time_us'].max(), 100)
+t_fit_s = t_fit_us / 1e6
+y_fit = slope * t_fit_s + intercept
+plt.plot(t_fit_us, y_fit, color='red', linestyle='--', label='Linear Fit')
+
+# Formatting and professional labels
+plt.xlabel('Time, $t$ / µs', fontsize=14)
+plt.ylabel('$\\ln(1 - V_C/V_s)$', fontsize=14)
+plt.title('Time constant measurement', fontsize=16)
+plt.legend(fontsize=12)
+plt.grid(True, which='both', linestyle=':')
+
+# Add a results box to the plot
+results_text = (
+    f"Linear Fit Equation:\n"
+    f"$y = ({slope:.3f}) \\cdot t$\n\n"
+    f"Time Constant (RC):\n"
+    f"$\\tau = -1/\\text{{slope}} = ({rc_value_str} \\pm {rc_uncertainty_str})$ µs\n\n"
+    f"R-squared: ${r_value**2:.5f}$"
+)
+props = dict(boxstyle='round,pad=0.5', facecolor='wheat', alpha=0.8)
+plt.text(0.05, 0.35, results_text, transform=plt.gca().transAxes, fontsize=12,
+         verticalalignment='top', bbox=props)
+
+plt.tight_layout()
+plt.show()
+
+# ==========================================
+# 7. FINAL CONSOLE OUTPUT
+# ==========================================
+print("--- Analysis Complete ---")
+print(f"The calculated slope is: {slope:.5f}")
+print(f"The R-squared value of the fit is: {r_value**2:.5f}")
+print(f"The experimental time constant (RC) is: ({rc_value_str} ± {rc_uncertainty_str}) µs")
